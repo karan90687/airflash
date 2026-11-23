@@ -1,0 +1,15 @@
+menu "Updater"
+    config UPD_WIFI_SSID
+        string "Wi-Fi SSID (2.4 GHz)"
+
+    config UPD_WIFI_PASSWORD
+        string "Wi-Fi password"
+
+    config UPD_HOSTNAME
+        string "mDNS hostname (<name>.local)"
+        default "esp-updater"
+
+    config UPD_TOKEN
+        string "X-Token required for /update, /run, /info (max 63 chars, empty = no auth)"
+        default ""
+endmenu

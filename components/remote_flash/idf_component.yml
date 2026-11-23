@@ -1,0 +1,7 @@
+version: "0.1.0"
+description: Wireless OTA flashing + log streaming over HTTP for ESP-IDF projects
+license: "MIT"
+# url / repository: add the GitHub URL once the repo is public
+dependencies:
+  idf: ">=5.0"
+  espressif/mdns: "^1"

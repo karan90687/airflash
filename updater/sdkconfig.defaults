@@ -1,0 +1,21 @@
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---- bootloader (installed once over USB with the updater; OTA never changes it) ----
+# an app that resets before confirming itself goes back to the updater
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+# recovery pin: hold GPIO1 (XIAO pin D0) to GND for 5 s at reset -> erase otadata -> updater runs
+CONFIG_BOOTLOADER_FACTORY_RESET=y
+CONFIG_BOOTLOADER_NUM_PIN_FACTORY_RESET=1
+CONFIG_BOOTLOADER_FACTORY_RESET_PIN_LOW=y
+CONFIG_BOOTLOADER_HOLD_TIME_GPIO=5
+CONFIG_BOOTLOADER_OTA_DATA_ERASE=y
+# don't wipe any of the user's data partitions on recovery (default would erase "nvs")
+CONFIG_BOOTLOADER_DATA_FACTORY_RESET=""
+
+# ---- keep the updater out of the user app's nvs partition ----
+# Wi-Fi config and PHY calibration would otherwise be stored in the app's "nvs"
+CONFIG_ESP_WIFI_NVS_ENABLED=n
+CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=n

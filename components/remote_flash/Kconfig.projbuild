@@ -1,0 +1,53 @@
+menu "Remote Flash"
+    config RF_WIFI_ENABLE
+        bool "Connect to Wi-Fi inside remote_flash_start()"
+        default y
+        help
+            Turn OFF if your project already brings up the network itself
+            (example_connect(), its own Wi-Fi code, Ethernet...). Then call
+            remote_flash_start() after the network is up.
+
+    config RF_WIFI_SSID
+        string "Wi-Fi SSID"
+        depends on RF_WIFI_ENABLE
+
+    config RF_WIFI_PASSWORD
+        string "Wi-Fi password"
+        depends on RF_WIFI_ENABLE
+
+    config RF_HOSTNAME
+        string "mDNS hostname (<name>.local)"
+        default "esp32"
+        help
+            Give every board on the same network a different name.
+
+    config RF_TOKEN
+        string "X-Token required for /update and /logs (max 63 chars, empty = no auth)"
+        default ""
+
+    config RF_HTTP_PORT
+        int "HTTP port"
+        default 80
+        help
+            Change if your project already runs its own web server on port 80.
+
+    config RF_LOG_BUF_SIZE
+        int "Log ring buffer size (bytes)"
+        default 16384
+        range 1024 262144
+        help
+            RAM used to keep recent logs. /logs briefly allocates the same amount again.
+
+    config RF_ROLLBACK_TIMEOUT_S
+        int "Seconds new firmware gets to reach Wi-Fi before rolling back"
+        default 60
+        depends on RF_WIFI_ENABLE
+
+    config RF_AUTO_MARK_VALID
+        bool "Mark new firmware valid as soon as the OTA server is up"
+        default y
+        help
+            Turn OFF to confirm it yourself with esp_ota_mark_app_valid_cancel_rollback()
+            once your app is healthy (e.g. camera/audio init succeeded). Until then
+            any reset rolls back to the previous firmware.
+endmenu
