@@ -2,8 +2,8 @@
 # CMakeLists in this exact order for cmake to work correctly
 cmake_minimum_required(VERSION 3.16)
 
-# use the remote_flash component from this repo
+# use the airflash component from this repo
 set(EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../components")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(remote-flash)
+project(basic)

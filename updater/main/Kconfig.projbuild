@@ -1,4 +1,4 @@
-menu "Updater"
+menu "airflash"
     config UPD_WIFI_SSID
         string "Wi-Fi SSID (2.4 GHz)"
 

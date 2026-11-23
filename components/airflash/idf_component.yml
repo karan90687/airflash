@@ -1,7 +1,8 @@
 version: "0.1.0"
 description: Wireless OTA flashing + log streaming over HTTP for ESP-IDF projects
 license: "MIT"
-# url / repository: add the GitHub URL once the repo is public
+url: "https://github.com/karan90687/airflash"
+repository: "https://github.com/karan90687/airflash.git"
 dependencies:
   idf: ">=5.0"
   espressif/mdns: "^1"

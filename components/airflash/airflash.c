@@ -17,13 +17,13 @@
 #include "esp_system.h"
 #include "nvs_flash.h"
 #include "mdns.h"
-#include "remote_flash.h"
+#include "airflash.h"
 
-static const char *TAG = "remote_flash";
+static const char *TAG = "airflash";
 
 /* ---------- log capture: every ESP_LOGx also goes into a RAM ring buffer ---------- */
 
-#define LOG_BUF_SIZE CONFIG_RF_LOG_BUF_SIZE
+#define LOG_BUF_SIZE CONFIG_AIRFLASH_LOG_BUF_SIZE
 static char *s_log;                 // PSRAM if the board has it, else internal RAM
 static size_t s_log_total;          // bytes ever logged; ring position = total % size
 static SemaphoreHandle_t s_log_mtx;
@@ -54,7 +54,7 @@ static void *big_alloc(size_t n)
     return p ? p : malloc(n);
 }
 
-void remote_flash_capture_logs(void)
+void airflash_capture_logs(void)
 {
     if (s_log_mtx) return;
     s_log = big_alloc(LOG_BUF_SIZE);
@@ -67,10 +67,10 @@ void remote_flash_capture_logs(void)
 
 static bool authorized(httpd_req_t *req)
 {
-    if (!CONFIG_RF_TOKEN[0]) return true;
+    if (!CONFIG_AIRFLASH_TOKEN[0]) return true;
     char tok[64];
     return httpd_req_get_hdr_value_str(req, "X-Token", tok, sizeof tok) == ESP_OK &&
-           strcmp(tok, CONFIG_RF_TOKEN) == 0;
+           strcmp(tok, CONFIG_AIRFLASH_TOKEN) == 0;
 }
 
 // Returns log bytes from offset `from` onward; header X-Next = offset to ask for next time.
@@ -151,7 +151,7 @@ static esp_err_t update_post(httpd_req_t *req)
 
 /* ---------- optional built-in Wi-Fi ---------- */
 
-#if CONFIG_RF_WIFI_ENABLE
+#if CONFIG_AIRFLASH_WIFI_ENABLE
 static EventGroupHandle_t s_wifi_ev;
 #define GOT_IP BIT0
 
@@ -162,7 +162,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         esp_wifi_connect();  // retry forever: a board that gives up can't be reflashed remotely
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *e = data;
-        ESP_LOGI(TAG, "got ip " IPSTR ", reachable at http://%s.local", IP2STR(&e->ip_info.ip), CONFIG_RF_HOSTNAME);
+        ESP_LOGI(TAG, "got ip " IPSTR ", reachable at http://%s.local", IP2STR(&e->ip_info.ip), CONFIG_AIRFLASH_HOSTNAME);
         xEventGroupSetBits(s_wifi_ev, GOT_IP);
     }
 }
@@ -186,8 +186,8 @@ static esp_err_t wifi_start(void)
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event, NULL);
 
     wifi_config_t wc = {0};
-    strlcpy((char *)wc.sta.ssid, CONFIG_RF_WIFI_SSID, sizeof wc.sta.ssid);
-    strlcpy((char *)wc.sta.password, CONFIG_RF_WIFI_PASSWORD, sizeof wc.sta.password);
+    strlcpy((char *)wc.sta.ssid, CONFIG_AIRFLASH_WIFI_SSID, sizeof wc.sta.ssid);
+    strlcpy((char *)wc.sta.password, CONFIG_AIRFLASH_WIFI_PASSWORD, sizeof wc.sta.password);
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "wifi mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wc), TAG, "wifi config");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "wifi start");
@@ -198,45 +198,45 @@ static esp_err_t wifi_start(void)
 
 /* ---------- public entry point ---------- */
 
-esp_err_t remote_flash_start(void)
+esp_err_t airflash_start(void)
 {
-    remote_flash_capture_logs();
+    airflash_capture_logs();
 
-#if CONFIG_RF_WIFI_ENABLE
+#if CONFIG_AIRFLASH_WIFI_ENABLE
     ESP_RETURN_ON_ERROR(wifi_start(), TAG, "wifi");
 #endif
 
     esp_err_t err = mdns_init();  // INVALID_STATE = project already started mDNS, reuse it
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return err;
-    mdns_hostname_set(CONFIG_RF_HOSTNAME);
-    mdns_service_add(NULL, "_http", "_tcp", CONFIG_RF_HTTP_PORT, NULL, 0);
+    mdns_hostname_set(CONFIG_AIRFLASH_HOSTNAME);
+    mdns_service_add(NULL, "_http", "_tcp", CONFIG_AIRFLASH_HTTP_PORT, NULL, 0);
 
     httpd_config_t hcfg = HTTPD_DEFAULT_CONFIG();
-    hcfg.server_port = CONFIG_RF_HTTP_PORT;
+    hcfg.server_port = CONFIG_AIRFLASH_HTTP_PORT;
     hcfg.ctrl_port = ESP_HTTPD_DEF_CTRL_PORT + 1;  // must differ from any httpd the project runs itself
     hcfg.stack_size = 8192;
     httpd_handle_t srv;
-    ESP_RETURN_ON_ERROR(httpd_start(&srv, &hcfg), TAG, "httpd start (port %d in use?)", CONFIG_RF_HTTP_PORT);
+    ESP_RETURN_ON_ERROR(httpd_start(&srv, &hcfg), TAG, "httpd start (port %d in use?)", CONFIG_AIRFLASH_HTTP_PORT);
     httpd_register_uri_handler(srv, &(httpd_uri_t){.uri = "/update", .method = HTTP_POST, .handler = update_post});
     httpd_register_uri_handler(srv, &(httpd_uri_t){.uri = "/logs", .method = HTTP_GET, .handler = logs_get});
 
     const esp_partition_t *running = esp_ota_get_running_partition();
     const esp_app_desc_t *app = esp_app_get_description();
     ESP_LOGI(TAG, "%s %s running from %s (built %s %s), OTA on port %d",
-             app->project_name, app->version, running->label, app->date, app->time, CONFIG_RF_HTTP_PORT);
+             app->project_name, app->version, running->label, app->date, app->time, CONFIG_AIRFLASH_HTTP_PORT);
 
     // Rollback: a freshly OTA'd image must prove it works, else the bootloader goes back to the old one.
     esp_ota_img_states_t state;
     if (esp_ota_get_state_partition(running, &state) != ESP_OK || state != ESP_OTA_IMG_PENDING_VERIFY) {
         return ESP_OK;
     }
-#if CONFIG_RF_WIFI_ENABLE
-    if (!(xEventGroupWaitBits(s_wifi_ev, GOT_IP, false, true, pdMS_TO_TICKS(CONFIG_RF_ROLLBACK_TIMEOUT_S * 1000)) & GOT_IP)) {
-        ESP_LOGE(TAG, "new firmware got no Wi-Fi in %ds, rolling back", CONFIG_RF_ROLLBACK_TIMEOUT_S);
+#if CONFIG_AIRFLASH_WIFI_ENABLE
+    if (!(xEventGroupWaitBits(s_wifi_ev, GOT_IP, false, true, pdMS_TO_TICKS(CONFIG_AIRFLASH_ROLLBACK_TIMEOUT_S * 1000)) & GOT_IP)) {
+        ESP_LOGE(TAG, "new firmware got no Wi-Fi in %ds, rolling back", CONFIG_AIRFLASH_ROLLBACK_TIMEOUT_S);
         esp_ota_mark_app_invalid_rollback_and_reboot();
     }
 #endif
-#if CONFIG_RF_AUTO_MARK_VALID
+#if CONFIG_AIRFLASH_AUTO_MARK_VALID
     esp_ota_mark_app_valid_cancel_rollback();
     ESP_LOGI(TAG, "new firmware marked valid");
 #else

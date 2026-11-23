@@ -16,3 +16,7 @@ sdkconfig.old
 .DS_Store
 __pycache__/
 *.pyc
+
+# kept local for now, not published yet
+/README.md
+/docs/plan.md
