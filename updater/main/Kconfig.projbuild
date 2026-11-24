@@ -7,7 +7,7 @@ menu "airflash"
 
     config UPD_HOSTNAME
         string "mDNS hostname (<name>.local)"
-        default "esp-updater"
+        default "airflash"
 
     config UPD_TOKEN
         string "X-Token required for /update, /run, /info (max 63 chars, empty = no auth)"

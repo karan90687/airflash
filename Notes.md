@@ -73,4 +73,45 @@ updater (factory) receives app → writes ota_0 → checks it
 - the app must now call `esp_ota_mark_app_valid_cancel_rollback()`   → VALID
 - if the app fails to call  `esp_ota_mark_app_valid_cancel_rollback()` or while uploading the new app the esp resets for any reason, then it will fallback again to factory parition and updater runs again ready for new app. 
 - u have to call this `esp_ota_mark_app_valid_cancel_rollback()` once u'r wifi and other stuff are healthy in u'r app.. 
-- 
+
+## the layout 
+```
+┌─────────────── LAPTOP ───────────────┐          ┌──────────────── ESP32-S3 (flash) ────────────────┐
+│ tool/ota.sh flash  (build + handover) │          │ 0x0      bootloader   decides what runs           │
+│ tool/ota.sh logs / idf.py monitor     │  Wi-Fi   │ 0x8000   partition table  the map                 │
+│                                       │◄────────►│ 0xF000   otadata      the switch: which app boots │
+└───────────────────────────────────────┘          │ 0x20000  factory  = UPDATER (never overwritten)   │
+                                                   │ 0x1A0000 ota_0    = YOUR APP + airflash component │
+                                                   │ 0x6F0000 storage  = your files (never touched)    │
+                                                   └───────────────────────────────────────────────────┘
+```
+- Bootloader at `0x0` reads otadata: points at a valid ota_0 → run the app. Blank or aborted → run factory (the updater). 
+- updater lives in factory: GET :80/info, POST :80/update (write ota_0 → verify → set otadata → reboot), POST :80/run
+- airflash componenet: lives in u'r app, it's job is to capture the logs from the program and stream them on `:3333`, answers `:8080/info`, takes `:8080/reboot-to-updater` confirms the app
+- ota.sh/monitor: lives in u'r laptop --> builds, checks what is runnign, does the handover, uploads new app and shows logs 
+
+# stage 3 
+## commands 
+- `idf.py airflash-flash` build → find the board → ask the app to hand over → wait for the updater → compatibility checks → upload with a progress bar → wait until the new app reports valid
+- `idf.py airflash-monitor` the real idf.py monitor over socker://ip:3333
+- `idf.py airflash-logs` plain log stream, no esp-idf needed, reconection is built in for reboots 
+- `idf.py airflash-info` reveals what is running (app or upater), versions, state, for the updater
+
+## safety check on each upload 
+- Chip ID (app header byte 12) must match the board 
+- App size must fit ota_0 
+- Chip revision must be in the app's min/max range 
+- Every data partition in the app's own table (e.g. storage) must exist on the board → otherwise refuse
+- App without the airflash component 
+
+- every esp-idf component has its own partition table, and on a board where airflash is never flashed the board will have default update layout... u'r app only uses its table at build time 
+- so at runtime the app finds data partitions by name and board has updater's partitions table... 
+- so if app has diff configuration of table than it will fail so check it properly 
+
+## core dump during a app crash 
+- by default the esp-idf does not enavle core dump but it can be enabled Core dump -> Data destinantion
+- while coredump is enalbed `iddf.py coredump-info or idf.py coredump-debug` can be used to view 
+- so when a crash happens we see the dump like htis Guru Meditation on the serial monitor... this data comes through uart serially... this isn't stored anywhere in esp.
+- so in this project we will reserve a 64kb partition just to store the core dump... esp-idf will find it by subtype `0x03=coredump` 
+- this will survive powe cut becauses it isn't part of ram.
+- when a null pointer or task watchdog makes a a crash, cpu and interrupts are stopped and then panic handler takes over it collects task's registers and stack and packs them into an ELF core file, its same format linux uses for crash dumps.

@@ -10,6 +10,7 @@
  *   POST /update  body = app .bin  → write ota_0, verify, boot it
  *   POST /run                      → boot the app already in ota_0 (e.g. after using the recovery pin)
  *   GET  /info                     → JSON: updater, chip, flash, partitions, installed app, why we're running
+ *   GET / DELETE /coredump         → crash dump of an app that crashed before it could serve it itself
  */
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -23,6 +24,8 @@
 #include "esp_app_desc.h"
 #include "esp_partition.h"
 #include "esp_flash.h"
+#include "esp_core_dump.h"
+#include <sys/param.h>
 #include "esp_chip_info.h"
 #include "esp_system.h"
 #include "esp_http_server.h"
@@ -159,6 +162,41 @@ static esp_err_t run_post(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ---------- GET / DELETE /coredump: the crash dump of an app that never got to serve it itself ---------- */
+// An app that crashes before confirming is rolled back to us; its core dump is still in the "coredump"
+// partition (flash survives), and these core dump calls work even though the updater doesn't make dumps itself.
+
+static size_t coredump_size(void)
+{
+    size_t addr, size;
+    return esp_core_dump_image_get(&addr, &size) == ESP_OK ? size : 0;
+}
+
+static esp_err_t coredump_get(httpd_req_t *req)
+{
+    if (!authorized(req)) return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "bad token");
+    size_t addr, size;
+    if (esp_core_dump_image_get(&addr, &size) != ESP_OK) return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "no core dump");
+    httpd_resp_set_type(req, "application/octet-stream");
+    static char buf[1024];
+    for (size_t off = 0; off < size; off += sizeof buf) {
+        size_t n = MIN(sizeof buf, size - off);
+        if (esp_flash_read(NULL, buf, addr + off, n) != ESP_OK || httpd_resp_send_chunk(req, buf, n) != ESP_OK) {
+            httpd_resp_send_chunk(req, NULL, 0);
+            return ESP_FAIL;
+        }
+    }
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+static esp_err_t coredump_delete(httpd_req_t *req)
+{
+    if (!authorized(req)) return httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "bad token");
+    esp_err_t err = esp_core_dump_image_erase();
+    if (err != ESP_OK) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+    return httpd_resp_sendstr(req, "OK, core dump erased\n");
+}
+
 /* ---------- GET /info: everything the laptop tool needs to decide if an app fits ---------- */
 
 static const char *app_state_str(const esp_partition_t *app)
@@ -187,6 +225,7 @@ static esp_err_t info_get(httpd_req_t *req)
     cJSON_AddStringToObject(upd, "idf", me->idf_ver);
     cJSON_AddStringToObject(upd, "running_because", why_running());
     cJSON_AddStringToObject(upd, "reset_reason", reset_reason_str(esp_reset_reason()));
+    cJSON_AddNumberToObject(root, "coredump", coredump_size());  // bytes of a crash dump waiting, 0 = none
 
     esp_chip_info_t chip;
     esp_chip_info(&chip);
@@ -291,4 +330,6 @@ void app_main(void)
     httpd_register_uri_handler(srv, &(httpd_uri_t){.uri = "/update", .method = HTTP_POST, .handler = update_post});
     httpd_register_uri_handler(srv, &(httpd_uri_t){.uri = "/run",    .method = HTTP_POST, .handler = run_post});
     httpd_register_uri_handler(srv, &(httpd_uri_t){.uri = "/info",   .method = HTTP_GET,  .handler = info_get});
+    httpd_register_uri_handler(srv, &(httpd_uri_t){.uri = "/coredump", .method = HTTP_GET,    .handler = coredump_get});
+    httpd_register_uri_handler(srv, &(httpd_uri_t){.uri = "/coredump", .method = HTTP_DELETE, .handler = coredump_delete});
 }

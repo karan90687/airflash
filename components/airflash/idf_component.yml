@@ -1,5 +1,5 @@
-version: "0.1.0"
-description: Wireless OTA flashing + log streaming over HTTP for ESP-IDF projects
+version: "0.3.0"
+description: "Companion for the airflash updater: wireless log stream from the first line + reboot-to-updater hook + rollback confirm"
 license: "MIT"
 url: "https://github.com/karan90687/airflash"
 repository: "https://github.com/karan90687/airflash.git"

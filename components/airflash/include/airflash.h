@@ -6,19 +6,23 @@ extern "C" {
 #endif
 
 /**
- * Start wireless flashing + log streaming:
- *   POST /update      upload a new app .bin (OTA)
- *   GET  /logs?from=N read captured ESP_LOG output
+ * Start the airflash companion inside your app (the airflash updater in `factory` does the flashing):
+ *   TCP  <log_port, 3333>     log stream from the app's first line (nc / idf.py monitor -p socket://ip:3333)
+ *   GET  <http_port, 8080>/info               → {"role":"app", project, version, state, ...}
+ *   POST <http_port, 8080>/reboot-to-updater  → hand over to the updater for the next flash
  *
- * With "Connect to Wi-Fi" on (menuconfig → airflash) this also brings up
- * NVS + Wi-Fi. With it off, call this AFTER your project has network (IP).
- * Also confirms freshly OTA'd firmware for rollback (see README).
+ *   GET/DELETE <http_port>/coredump          → the last crash dump (needs CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y)
+ *
+ * Call it after your app has network (or turn on "Connect to Wi-Fi" in menuconfig → airflash).
+ * It logs the reset reason (and a crash summary after a crash) and confirms a freshly installed app,
+ * so the bootloader doesn't roll back to the updater.
+ * The log buffer survives software resets, crashes and watchdog resets, so the lines before a crash are kept.
  */
 esp_err_t airflash_start(void);
 
 /**
- * Optional: start capturing logs early (first line of app_main) so boot logs
- * before airflash_start() also show up in /logs. Safe to call twice.
+ * Start capturing logs now. Called automatically before app_main() unless
+ * "Capture logs from before app_main()" is off. Safe to call twice.
  */
 void airflash_capture_logs(void);
 

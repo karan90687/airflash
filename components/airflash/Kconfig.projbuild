@@ -1,14 +1,14 @@
 menu "airflash"
     config AIRFLASH_WIFI_ENABLE
         bool "Connect to Wi-Fi inside airflash_start()"
-        default y
+        default n
         help
-            Turn OFF if your project already brings up the network itself
-            (example_connect(), its own Wi-Fi code, Ethernet...). Then call
+            Turn ON only if your app has no networking of its own. Apps that already connect
+            (example_connect(), own Wi-Fi code, Ethernet) leave this off and call
             airflash_start() after the network is up.
 
     config AIRFLASH_WIFI_SSID
-        string "Wi-Fi SSID"
+        string "Wi-Fi SSID (2.4 GHz)"
         depends on AIRFLASH_WIFI_ENABLE
 
     config AIRFLASH_WIFI_PASSWORD
@@ -17,37 +17,65 @@ menu "airflash"
 
     config AIRFLASH_HOSTNAME
         string "mDNS hostname (<name>.local)"
-        default "esp32"
-        help
-            Give every board on the same network a different name.
+        default "airflash"
 
     config AIRFLASH_TOKEN
-        string "X-Token required for /update and /logs (max 63 chars, empty = no auth)"
+        string "X-Token required for /info and /reboot-to-updater (max 63 chars, empty = no auth)"
         default ""
 
     config AIRFLASH_HTTP_PORT
-        int "HTTP port"
-        default 80
+        int "Control port (HTTP: /info, /reboot-to-updater)"
+        default 8080
         help
-            Change if your project already runs its own web server on port 80.
+            Not 80: the updater uses 80, and many apps run their own web server there.
+
+    config AIRFLASH_LOG_PORT
+        int "Log stream port (TCP)"
+        default 3333
+        help
+            nc <ip> 3333   or   idf.py -p socket://<ip>:3333 monitor
+
+    config AIRFLASH_LOG_CLIENTS
+        int "Log viewers at the same time"
+        default 3
+        range 1 5
+        help
+            e.g. `airflash logs` and `idf.py monitor` side by side. Each viewer uses one lwIP socket
+            (CONFIG_LWIP_MAX_SOCKETS, default 10, shared with your app).
 
     config AIRFLASH_LOG_BUF_SIZE
         int "Log ring buffer size (bytes)"
         default 16384
-        range 1024 262144
+        range 2048 65536
         help
-            RAM used to keep recent logs. /logs briefly allocates the same amount again.
+            Recent logs kept in internal RAM. They survive software resets, crashes and watchdog resets
+            (not power-off), so the lines before a crash can still be read after the reboot.
+            Not PSRAM: its cache is thrown away on reset, losing exactly the newest lines.
+            Each new stream connection replays what's still in here.
+
+    config AIRFLASH_ROM_LOGS
+        bool "Also capture esp_rom_printf output"
+        default y
+        help
+            Uses the ROM's second printf channel, so ESP_EARLY_LOGx lines, the task watchdog report
+            and the core dump's "saved" lines also reach the stream.
+
+    config AIRFLASH_EARLY_LOGS
+        bool "Capture logs from before app_main()"
+        default y
+        help
+            Installs the log hook during startup (a global constructor), so the stream starts at the
+            app's first line instead of at airflash_start().
 
     config AIRFLASH_ROLLBACK_TIMEOUT_S
-        int "Seconds new firmware gets to reach Wi-Fi before rolling back"
+        int "Seconds a new app gets to reach Wi-Fi before rolling back to the updater"
         default 60
         depends on AIRFLASH_WIFI_ENABLE
 
     config AIRFLASH_AUTO_MARK_VALID
-        bool "Mark new firmware valid as soon as the OTA server is up"
+        bool "Confirm a new app as soon as airflash_start() runs"
         default y
         help
-            Turn OFF to confirm it yourself with esp_ota_mark_app_valid_cancel_rollback()
-            once your app is healthy (e.g. camera/audio init succeeded). Until then
-            any reset rolls back to the previous firmware.
+            Turn OFF to confirm it yourself with esp_ota_mark_app_valid_cancel_rollback() once your
+            app is healthy. Until then any reset sends the board back to the updater.
 endmenu
