@@ -16,31 +16,46 @@ menu "airflash"
         depends on AIRFLASH_WIFI_ENABLE
 
     config AIRFLASH_HOSTNAME
-        string "mDNS hostname (<name>.local)"
-        default "airflash"
-
-    config AIRFLASH_TOKEN
-        string "X-Token required for /info and /reboot-to-updater (max 63 chars, empty = no auth)"
+        string "mDNS hostname (<name>.local), empty = airflash-XXXX"
         default ""
+        help
+            Empty: airflash-XXXX, XXXX = the last 4 hex digits of the Wi-Fi MAC (e.g. airflash-9220),
+            so several boards on one network don't all claim the same name. The updater and the
+            airflash component use the same rule, so a board keeps one name in the app and the updater.
+            Also sent as the DHCP hostname (router's client list) where airflash brings up Wi-Fi itself.
 
     config AIRFLASH_HTTP_PORT
         int "Control port (HTTP: /info, /reboot-to-updater)"
         default 8080
         help
             Not 80: the updater uses 80, and many apps run their own web server there.
+            If the app already uses this port, airflash logs an error at boot and the app runs without it.
+
+    config AIRFLASH_HTTP_CTRL_PORT
+        int "Control server's internal port (UDP, 127.0.0.1 only)"
+        default 32800
+        range 1024 65535
+        help
+            Every esp_http_server instance needs an internal UDP socket on 127.0.0.1 (its "ctrl_port"),
+            and it must be unique per server: two servers on one port can't both start. It's never
+            reachable from the network. Apps keep IDF's default 32768 for their own server and usually
+            take 32769 for a second one (e.g. the ESP32 camera web server), so airflash uses 32800.
+            Change it only if your app already uses this port.
 
     config AIRFLASH_LOG_PORT
         int "Log stream port (TCP)"
         default 3333
         help
-            nc <ip> 3333   or   idf.py -p socket://<ip>:3333 monitor
+            Read it with `idf.py airflash-monitor` or `airflash.py logs`. Each connection starts with a
+            challenge-response (the board's pairing token), so plain `nc <ip> 3333` and
+            `idf.py -p socket://<ip>:3333 monitor` don't work.
 
     config AIRFLASH_LOG_CLIENTS
         int "Log viewers at the same time"
         default 3
         range 1 5
         help
-            e.g. `airflash logs` and `idf.py monitor` side by side. Each viewer uses one lwIP socket
+            e.g. `airflash.py logs` and `idf.py airflash-monitor` side by side. Each viewer uses one lwIP socket
             (CONFIG_LWIP_MAX_SOCKETS, default 10, shared with your app).
 
     config AIRFLASH_LOG_BUF_SIZE
@@ -57,25 +72,75 @@ menu "airflash"
         bool "Also capture esp_rom_printf output"
         default y
         help
-            Uses the ROM's second printf channel, so ESP_EARLY_LOGx lines, the task watchdog report
-            and the core dump's "saved" lines also reach the stream.
+            Uses the ROM's second printf channel, so ESP_EARLY_LOGx lines (most startup lines), the task
+            watchdog report and the core dump's "saved" lines also reach the stream.
 
     config AIRFLASH_EARLY_LOGS
         bool "Capture logs from before app_main()"
         default y
         help
-            Installs the log hook during startup (a global constructor), so the stream starts at the
-            app's first line instead of at airflash_start().
+            Starts capturing at the very start of the app: on IDF 5.3+ from the first startup stage,
+            before the CPU frequency, app info, chip revision, heap and flash lines; the ESP_LOGx hook
+            follows from a global constructor, still before app_main(). Off: capturing starts in
+            airflash_start().
+
+    config AIRFLASH_PANIC_TEXT
+        bool "Capture the panic handler's own text (Guru Meditation, registers, backtrace)"
+        default y
+        depends on !ESP_SYSTEM_PANIC_SILENT_REBOOT
+        help
+            The panic handler writes straight to the UART/USB hardware, past every log hook. With this on,
+            airflash intercepts its print functions at link time (-Wl,--wrap) and copies the text into
+            the log buffer too, so the stream shows the crash just as the serial monitor did.
+            Needs IDF 5.2+; skipped when the BLE controller's "wrap panic handler" log option is on.
+            When off (or nothing was captured), the next boot prints a summary rebuilt from the core dump.
+
+    config AIRFLASH_COREDUMP_LOG_TAIL
+        int "Log bytes stored inside the core dump (0 = off)"
+        default 4096
+        range 0 16384
+        depends on ESP_COREDUMP_ENABLE_TO_FLASH && ESP_COREDUMP_DATA_FORMAT_ELF
+        help
+            The newest N bytes of the crashed boot's logs, kept in a RAM area every core dump saves.
+            The log buffer itself is gone once the updater takes over after a rollback; the core dump
+            stays in flash, so `airflash.py coredump` can still show the lines before the crash.
+            Costs N bytes of internal RAM, N bytes of app image (it's initialized data) and N bytes
+            of core dump.
 
     config AIRFLASH_ROLLBACK_TIMEOUT_S
-        int "Seconds a new app gets to reach Wi-Fi before rolling back to the updater"
+        int "Seconds a newly flashed app gets to get on the network (0 = no limit)"
         default 60
-        depends on AIRFLASH_WIFI_ENABLE
+        range 0 3600
+        help
+            Only on the first boot after a flash, while the app is still pending verify. The app is on
+            the network once airflash_start() has run and an interface (Wi-Fi or Ethernet) has an IPv4
+            address; then it's confirmed (see below). If not in time (wrong Wi-Fi password,
+            airflash_start() never reached, ...), airflash aborts with the reason, e.g.
+            "airflash: not on the network 60 s after boot (Wi-Fi 'home': reason 15 4WAY_HANDSHAKE_TIMEOUT)".
+            The core dump keeps that message, and the bootloader rolls back to the updater, so the
+            board stays reachable for the next flash. An app that confirms itself in time also ends it.
 
     config AIRFLASH_AUTO_MARK_VALID
-        bool "Confirm a new app as soon as airflash_start() runs"
+        bool "Confirm a new app as soon as it's on the network"
         default y
         help
             Turn OFF to confirm it yourself with esp_ota_mark_app_valid_cancel_rollback() once your
             app is healthy. Until then any reset sends the board back to the updater.
+
+    config AIRFLASH_CRASH_LOOP_COUNT
+        int "Park the app in the updater after this many crashes in a row right after boot (0 = off)"
+        default 3
+        range 0 100
+        help
+            A confirmed app that crashes (panic or watchdog) on every boot before it's on the network can
+            never be reached again. After this many such boots in a row, airflash marks it invalid: the
+            bootloader starts the updater instead (its /info says running_because: app_crash_loop),
+            ready for a fixed build. Brownout, power-on and software resets never count, and neither
+            does the first boot after a flash (the rollback handles that one).
+
+    config AIRFLASH_CRASH_LOOP_WINDOW_S
+        int "A crash counts if it happens within this many seconds of boot"
+        default 30
+        range 1 3600
+        depends on AIRFLASH_CRASH_LOOP_COUNT != 0
 endmenu

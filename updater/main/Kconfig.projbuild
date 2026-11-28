@@ -6,10 +6,22 @@ menu "airflash"
         string "Wi-Fi password"
 
     config UPD_HOSTNAME
-        string "mDNS hostname (<name>.local)"
-        default "airflash"
+        string "mDNS hostname (<name>.local), empty = airflash-XXXX"
+        default ""
+        help
+            Empty: airflash-XXXX, XXXX = the last 4 hex digits of the Wi-Fi MAC (e.g. airflash-9220),
+            so several boards on one network don't all claim the same name. The updater and the
+            airflash component use the same rule, so a board keeps one name in the app and the updater.
+            Also sent as the DHCP hostname (router's client list) where airflash brings up Wi-Fi itself.
 
     config UPD_TOKEN
-        string "X-Token required for /update, /run, /info (max 63 chars, empty = no auth)"
+        string "Pairing token (empty = generate one)"
         default ""
+        help
+            Empty: the build creates a random token once per laptop (~/.airflash/token) and uses it for
+            every board installed from this laptop.
+            Set: use this token instead (printable ASCII without spaces, 1-63 characters), e.g. one shared
+            by a team. If ~/.airflash/token doesn't exist yet, the build saves it there for the airflash tool.
+            Stored only in this sdkconfig and in the board's upd_cfg partition, never compiled into the
+            firmware. A random token is stronger than a short custom one.
 endmenu

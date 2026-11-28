@@ -1,8 +1,10 @@
-version: "0.3.0"
-description: "Companion for the airflash updater: wireless log stream from the first line + reboot-to-updater hook + rollback confirm"
+version: "0.1.0"
+description: "Companion for the airflash updater: wireless log stream from the first line, crash dumps, reboot-to-updater hook, rollback confirm, pairing with the board's token"
 license: "MIT"
 url: "https://github.com/karan90687/airflash"
 repository: "https://github.com/karan90687/airflash.git"
+targets:
+  - esp32s3
 dependencies:
-  idf: ">=5.0"
+  idf: ">=5.4.3"
   espressif/mdns: "^1"

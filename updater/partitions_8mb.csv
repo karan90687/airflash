@@ -1,0 +1,18 @@
+# airflash layout for 8 MB flash. Installed once over USB together with the updater.
+# The build picks partitions_<size>.csv from menuconfig "Serial flasher config -> Flash size"
+# and copies it to partitions.csv (generated, don't edit that one). All layouts use the same names.
+# Name,   Type, SubType,   Offset,   Size
+nvs,      data, nvs,       0x9000,   0x6000
+otadata,  data, ota,       0xF000,   0x2000
+phy_init, data, phy,       0x11000,  0x1000
+# the updater's own settings: the pairing token written by `idf.py flash` (tools/upd_cfg.py).
+# "undefined" = a subtype nothing in ESP-IDF formats or touches.
+upd_cfg,  data, undefined, 0x12000,  0x4000
+# the updater itself: never overwritten by OTA
+factory,  app,  factory,   0x20000,  0x180000
+# the user's app: replaced on every wireless flash
+ota_0,    app,  ota_0,     0x1A0000, 0x550000
+# for user apps that need files (e.g. file_serving's SPIFFS "storage")
+storage,  data, spiffs,    0x6F0000, 0x100000
+# crash dumps of the user's app
+coredump, data, coredump,  0x7F0000, 0x10000

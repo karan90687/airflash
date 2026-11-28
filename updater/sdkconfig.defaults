@@ -1,4 +1,6 @@
 CONFIG_IDF_TARGET="esp32s3"
+# 8 MB = XIAO ESP32-S3. 4 MB and 16 MB (or more) also work: the build picks partitions_<size>.csv from this
+# setting and copies it to partitions.csv (generated, see CMakeLists.txt).
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
@@ -6,14 +8,19 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # ---- bootloader (installed once over USB with the updater; OTA never changes it) ----
 # an app that resets before confirming itself goes back to the updater
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
-# recovery pin: hold GPIO1 (XIAO pin D0) to GND for 5 s at reset -> erase otadata -> updater runs
-CONFIG_BOOTLOADER_FACTORY_RESET=y
-CONFIG_BOOTLOADER_NUM_PIN_FACTORY_RESET=1
-CONFIG_BOOTLOADER_FACTORY_RESET_PIN_LOW=y
-CONFIG_BOOTLOADER_HOLD_TIME_GPIO=5
-CONFIG_BOOTLOADER_OTA_DATA_ERASE=y
-# don't wipe any of the user's data partitions on recovery (default would erase "nvs")
-CONFIG_BOOTLOADER_DATA_FACTORY_RESET=""
+
+# recovery pin, off by default. To turn it on, replace the "is not set" line below with these lines
+# (or menuconfig -> Bootloader config -> GPIO triggers factory reset):
+# hold GPIO1 (XIAO pin D0) to GND (low) for 5 s at reset -> otadata is erased -> the updater runs.
+# Pick a pin your board doesn't drive at reset; _PIN_HIGH instead of _PIN_LOW triggers on 3.3 V.
+# The empty DATA_FACTORY_RESET line keeps all data partitions (the default would erase "nvs").
+#   CONFIG_BOOTLOADER_FACTORY_RESET=y
+#   CONFIG_BOOTLOADER_NUM_PIN_FACTORY_RESET=1
+#   CONFIG_BOOTLOADER_FACTORY_RESET_PIN_LOW=y
+#   CONFIG_BOOTLOADER_HOLD_TIME_GPIO=5
+#   CONFIG_BOOTLOADER_OTA_DATA_ERASE=y
+#   CONFIG_BOOTLOADER_DATA_FACTORY_RESET=""
+# CONFIG_BOOTLOADER_FACTORY_RESET is not set
 
 # ---- keep the updater out of the user app's nvs partition ----
 # Wi-Fi config and PHY calibration would otherwise be stored in the app's "nvs"
